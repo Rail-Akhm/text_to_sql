@@ -2,7 +2,7 @@
 
 ## Project Overview
 Корпоративный инструмент для преобразования естественного языка в SQL-запросы.
-Цель — MVP: задаёшь вопрос на русском/английском, получаешь SQL и результат.
+Цель — MVP: задаёшь вопрос на русском/английском, получаешь SQL и контекст релевантных полей.
 
 ## Tech Stack
 
@@ -20,30 +20,32 @@
 ```
 User (Streamlit)
      ↓
-Query Processor
+get_embedding(question) → baai/bge-m3 via OpenRouter
      ↓
-Embedding (baai/bge-m3 via OpenRouter) → Vector Search (edm.data_catalog)
+cosine_similarity() → Top-10 из edm.data_catalog
      ↓
-Schema Context Builder
+build_schema_context() → текстовая схема релевантных таблиц
      ↓
-LLM (stepfun/step-3.5-flash via OpenRouter) → SQL Generation
+generate_sql(question, schema_context) → stepfun/step-3.5-flash via OpenRouter
      ↓
-SQL Executor (PostgreSQL)
-     ↓
-Result Display (Streamlit)
+st.code(sql, language="sql") + st.expander(релевантные поля)
 ```
 
 ## Databases
 
 | БД | Назначение |
 |----|-----------|
-| `postgres` | Схема `edm` — каталог данных с векторами (`edm.data_catalog`) |
-| `text_to_sql` | Рабочие таблицы нефтегазовой предметной области |
+| `postgres` | Схема `edm` — каталог данных с векторами (`edm.data_catalog`) + 10 рабочих таблиц |
+
+> Все таблицы находятся в одной БД `postgres`. DATABASE_URL указывает на неё.
 
 ## Key Decisions
 - Векторы хранятся в `FLOAT8[]` в обычных таблицах PostgreSQL (без pgvector)
-- OpenRouter используется и для эмбеддингов, и для генерации SQL
-- Каталог данных (`edm.data_catalog`) описывает все поля всех таблиц — используется для vector search и построения контекста
+- Cosine similarity считается в Python через numpy (каталог ~90 строк, быстро)
+- Каталог `edm.data_catalog` кешируется через `@st.cache_resource` — грузится один раз при старте
+- Top-10 релевантных полей передаются в контекст LLM
+- LLM генерирует только SELECT-запросы
+- Пользователю показывается SQL + раскрывающийся блок с найденными полями и score
 - Локальный запуск — без облачных зависимостей, кроме OpenRouter API
 - MVP: без авторизации, без мультитенантности
 - Коммиты только по явному запросу пользователя
@@ -63,11 +65,12 @@ text_to_sql/
 │   └── docker-compose.yml      # PostgreSQL 16
 ├── postgres/
 │   ├── init.sql                # DDL 10 нефтегазовых таблиц
-│   └── init_edm.sql            # схема edm, таблица data_catalog + данные
+│   ├── init_edm.sql            # схема edm, таблица data_catalog + данные
+│   └── seed_data.py            # генерация синтетических данных (1000 строк/таблица)
 ├── embeddings/
 │   └── vectorize_catalog.py    # векторизация edm.data_catalog через OpenRouter
 └── streamlit/
-    └── app.py                  # Streamlit чат-бот (подключён к OpenRouter LLM)
+    └── app.py                  # Streamlit: text-to-SQL интерфейс
 ```
 
 ## Environment Variables
@@ -91,8 +94,11 @@ DATABASE_URL=postgresql://admin:password@localhost:5432/postgres
 cd docker && docker-compose up -d
 
 # Применить DDL вручную
-docker exec -i text_to_sql_db psql -U admin -d text_to_sql -f /dev/stdin < postgres/init.sql
-docker exec -i text_to_sql_db psql -U admin -d postgres   -f /dev/stdin < postgres/init_edm.sql
+docker exec -i text_to_sql_db psql -U admin -d postgres -f /dev/stdin < postgres/init.sql
+docker exec -i text_to_sql_db psql -U admin -d postgres -f /dev/stdin < postgres/init_edm.sql
+
+# Наполнить синтетическими данными
+python postgres/seed_data.py
 
 # Векторизовать каталог
 python embeddings/vectorize_catalog.py
@@ -101,7 +107,7 @@ python embeddings/vectorize_catalog.py
 streamlit run streamlit/app.py
 ```
 
-## Domain Tables (postgres / public → text_to_sql)
+## Domain Tables (в БД postgres, схема public)
 
 | Таблица | Описание |
 |---------|---------|
@@ -115,3 +121,9 @@ streamlit run streamlit/app.py
 | `well_equipment` | Оборудование скважин (ЭЦН, ШГН) |
 | `incidents` | Аварии и инциденты |
 | `gtm` | Геолого-технические мероприятия |
+
+## EDM Catalog (в БД postgres, схема edm)
+
+| Таблица | Описание |
+|---------|---------|
+| `edm.data_catalog` | Каталог всех полей: schema, table, column, description, embedding (FLOAT8[]) |

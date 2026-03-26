@@ -1,13 +1,24 @@
 # Text-to-SQL
 
-Корпоративный инструмент для преобразования вопросов на естественном языке в SQL-запросы.
+Корпоративный инструмент для преобразования вопросов на естественном языке в SQL-запросы для нефтегазовой предметной области.
 
 ## Стек
 
-- **UI** — Streamlit
-- **LLM / Embeddings** — OpenRouter
-- **База данных** — PostgreSQL (локально)
-- **Векторное хранилище** — обычные таблицы PostgreSQL
+| Слой | Технология |
+|------|-----------|
+| UI | Streamlit |
+| LLM | OpenRouter — `stepfun/step-3.5-flash:free` |
+| Embeddings | OpenRouter — `baai/bge-m3` |
+| База данных | PostgreSQL 16 (Docker) |
+| Векторное хранилище | Обычные таблицы PostgreSQL (`FLOAT8[]`) |
+
+## Как это работает
+
+1. Пользователь задаёт вопрос на русском языке
+2. Вопрос векторизуется через `baai/bge-m3`
+3. Cosine similarity поиск по каталогу данных `edm.data_catalog` → Top-10 релевантных полей
+4. LLM получает схему релевантных таблиц и генерирует SQL
+5. SQL и найденные поля отображаются в интерфейсе
 
 ## Быстрый старт
 
@@ -21,24 +32,37 @@ cd text_to_sql
 ### 2. Установить зависимости
 
 ```bash
-pip install openai python-dotenv streamlit
+pip install openai python-dotenv streamlit psycopg2-binary numpy
 ```
 
 ### 3. Настроить переменные окружения
 
 ```bash
 cp .env.example .env
+# Заполнить OPENROUTER_API_KEY
 ```
 
-Заполнить `.env`:
+### 4. Поднять PostgreSQL
 
-```
-OPENROUTER_API_KEY=sk-or-...
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=stepfun/step-3.5-flash:free
+```bash
+cd docker && docker-compose up -d
 ```
 
-### 4. Запустить
+### 5. Применить DDL и наполнить данными
+
+```bash
+# Создать таблицы
+docker exec -i text_to_sql_db psql -U admin -d postgres -f /dev/stdin < postgres/init.sql
+docker exec -i text_to_sql_db psql -U admin -d postgres -f /dev/stdin < postgres/init_edm.sql
+
+# Синтетические данные
+python postgres/seed_data.py
+
+# Векторизовать каталог
+python embeddings/vectorize_catalog.py
+```
+
+### 6. Запустить UI
 
 ```bash
 streamlit run streamlit/app.py
@@ -50,12 +74,20 @@ streamlit run streamlit/app.py
 
 ```
 text_to_sql/
-├── .env.example        # Шаблон переменных окружения
+├── .env.example                # Шаблон переменных окружения
 ├── .gitignore
-├── CLAUDE.md           # Архитектура и решения по проекту
+├── CLAUDE.md                   # Архитектура и решения по проекту
 ├── README.md
 ├── commands/
-│   └── commit.md       # Конвенция коммитов
+│   └── commit.md               # Конвенция коммитов
+├── docker/
+│   └── docker-compose.yml      # PostgreSQL 16
+├── embeddings/
+│   └── vectorize_catalog.py    # Векторизация каталога через OpenRouter
+├── postgres/
+│   ├── init.sql                # DDL 10 нефтегазовых таблиц
+│   ├── init_edm.sql            # Схема EDM + каталог данных
+│   └── seed_data.py            # Генерация синтетических данных
 └── streamlit/
-    └── app.py          # Streamlit приложение
+    └── app.py                  # Text-to-SQL интерфейс
 ```
