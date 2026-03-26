@@ -90,22 +90,24 @@ DATABASE_URL=postgresql://admin:password@localhost:5432/postgres
 ## Run Commands
 
 ```bash
+# Зависимости
+pip install -r requirements.txt
+
 # Поднять БД
-cd docker && docker-compose up -d
+cd docker && docker-compose up -d && cd ..
 
-# Применить DDL вручную
-docker exec -i text_to_sql_db psql -U admin -d postgres -f /dev/stdin < postgres/init.sql
-docker exec -i text_to_sql_db psql -U admin -d postgres -f /dev/stdin < postgres/init_edm.sql
-
-# Наполнить синтетическими данными
-python postgres/seed_data.py
-
-# Векторизовать каталог
-python embeddings/vectorize_catalog.py
+# Первоначальная настройка (DDL + данные + векторизация)
+python setup.py
 
 # Запустить UI
 streamlit run streamlit/app.py
 ```
+
+## Setup Script (setup.py)
+Выполняет три шага по порядку:
+1. Применяет `postgres/init.sql` и `postgres/init_edm.sql` к БД
+2. Запускает `postgres/seed_data.py` — 1000 строк в каждую из 10 таблиц
+3. Запускает `embeddings/vectorize_catalog.py` — векторизует ~90 записей каталога
 
 ## Domain Tables (в БД postgres, схема public)
 

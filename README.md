@@ -32,7 +32,7 @@ cd text_to_sql
 ### 2. Установить зависимости
 
 ```bash
-pip install openai python-dotenv streamlit psycopg2-binary numpy
+pip install -r requirements.txt
 ```
 
 ### 3. Настроить переменные окружения
@@ -45,21 +45,13 @@ cp .env.example .env
 ### 4. Поднять PostgreSQL
 
 ```bash
-cd docker && docker-compose up -d
+cd docker && docker-compose up -d && cd ..
 ```
 
-### 5. Применить DDL и наполнить данными
+### 5. Первоначальная настройка (DDL + данные + векторизация)
 
 ```bash
-# Создать таблицы
-docker exec -i text_to_sql_db psql -U admin -d postgres -f /dev/stdin < postgres/init.sql
-docker exec -i text_to_sql_db psql -U admin -d postgres -f /dev/stdin < postgres/init_edm.sql
-
-# Синтетические данные
-python postgres/seed_data.py
-
-# Векторизовать каталог
-python embeddings/vectorize_catalog.py
+python setup.py
 ```
 
 ### 6. Запустить UI
@@ -76,6 +68,8 @@ streamlit run streamlit/app.py
 text_to_sql/
 ├── .env.example                # Шаблон переменных окружения
 ├── .gitignore
+├── requirements.txt            # Python-зависимости
+├── setup.py                    # Скрипт первоначальной настройки
 ├── CLAUDE.md                   # Архитектура и решения по проекту
 ├── README.md
 ├── commands/
