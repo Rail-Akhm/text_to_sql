@@ -22,13 +22,17 @@ User (Streamlit)
      ↓
 get_embedding(question) → baai/bge-m3 via OpenRouter
      ↓
-cosine_similarity() → Top-10 из edm.data_catalog
+cosine_similarity() → Top-10 полей из edm.data_catalog
+     ↓
+expand_to_full_tables()
+  ├── все поля найденных таблиц
+  └── FK-парсинг описаний "(tablename.id)" → подтягивает связанные таблицы
      ↓
 build_schema_context() → текстовая схема релевантных таблиц
      ↓
 generate_sql(question, schema_context) → stepfun/step-3.5-flash via OpenRouter
      ↓
-st.code(sql, language="sql") + st.expander(релевантные поля)
+st.code(sql, language="sql") + st.expander(найденные таблицы + поля со score)
 ```
 
 ## Databases
@@ -43,9 +47,10 @@ st.code(sql, language="sql") + st.expander(релевантные поля)
 - Векторы хранятся в `FLOAT8[]` в обычных таблицах PostgreSQL (без pgvector)
 - Cosine similarity считается в Python через numpy (каталог ~90 строк, быстро)
 - Каталог `edm.data_catalog` кешируется через `@st.cache_resource` — грузится один раз при старте
-- Top-10 релевантных полей передаются в контекст LLM
+- Top-10 релевантных полей → expand_to_full_tables → LLM получает полную схему найденных таблиц
+- FK-автоматика: если описание поля содержит `(tablename.id)`, связанная таблица добавляется в контекст автоматически (решает проблему пропущенных JOIN-таблиц)
 - LLM генерирует только SELECT-запросы
-- Пользователю показывается SQL + раскрывающийся блок с найденными полями и score
+- Пользователю показывается SQL + раскрывающийся блок с найденными таблицами и полями со score
 - Локальный запуск — без облачных зависимостей, кроме OpenRouter API
 - MVP: без авторизации, без мультитенантности
 - Коммиты только по явному запросу пользователя

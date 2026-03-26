@@ -1,4 +1,5 @@
 import os
+import re
 import numpy as np
 import psycopg2
 import streamlit as st
@@ -52,6 +53,25 @@ def vector_search(query_embedding, catalog, top_k=TOP_K):
     ]
     scored.sort(reverse=True)
     return scored[:top_k]
+
+
+def expand_to_full_tables(relevant: list, catalog: list) -> list:
+    """По найденным полям включает ВСЕ поля их таблиц + таблицы на которые они ссылаются через FK."""
+    found_tables = {row[1] for row in relevant}
+
+    # Парсим FK-ссылки вида "(tablename.id)" из описаний найденных полей
+    fk_pattern = re.compile(r'\((\w+)\.id\)')
+    for _, _, _, description in relevant:
+        if description:
+            for match in fk_pattern.findall(description):
+                found_tables.add(match)
+
+    top_k_index = {(r[1], r[2]): r[0] for r in relevant}
+    return [
+        (top_k_index.get((row[0], row[1]), 0.0), row[0], row[1], row[2])
+        for row in catalog
+        if row[0] in found_tables
+    ]
 
 
 def build_schema_context(relevant: list) -> str:
@@ -115,14 +135,18 @@ if prompt := st.chat_input("Задайте вопрос на русском...")
         with st.spinner("Ищу релевантные поля..."):
             query_embedding = get_embedding(prompt)
             relevant = vector_search(query_embedding, catalog)
-            schema_context = build_schema_context(relevant)
+            expanded = expand_to_full_tables(relevant, catalog)
+            schema_context = build_schema_context(expanded)
 
         with st.spinner("Генерирую SQL..."):
             sql = generate_sql(prompt, schema_context)
 
         st.code(sql, language="sql")
 
-        with st.expander("Релевантные поля из каталога"):
+        with st.expander("Релевантные таблицы и поля"):
+            found_tables = {r[1] for r in relevant}
+            st.caption(f"Найдено таблиц: {len(found_tables)} — {', '.join(sorted(found_tables))}")
+            st.divider()
             for sim, table, col, desc in relevant:
                 st.markdown(f"**{table}.{col}** `{sim:.3f}` — {desc}")
 
