@@ -22,6 +22,7 @@ def get_embedding(text: str) -> list[float]:
 
 
 def main():
+    
     conn = psycopg2.connect(DATABASE_URL)
     cur = conn.cursor()
 
